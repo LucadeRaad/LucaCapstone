@@ -11,8 +11,18 @@
 #include <iostream>
 
 #define BUFFER_SIZE 1024
-
 #define HEADER_SIZE 12
+
+#define PACKET_START "@ABCD"
+
+#define PACKET_START_SIZE 5
+#define PACKET_TYPE_SIZE 1
+#define PACKET_LENGTH_SIZE 2
+#define PACKET_NUMBER_SIZE 4
+
+#define PACKET_EVENT_CODE_SIZE 4
+#define PACKET_EVENT_SENDING_NODE_SIZE 4
+#define PACKET_EVENT_LENGTH_SIZE 4
 
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa)
@@ -25,6 +35,25 @@ void *get_in_addr(struct sockaddr *sa)
     {
 	    return &(((struct sockaddr_in6*)sa)->sin6_addr);
     }
+}
+
+
+void read_dsi_packet(int sockfd, char *buf, int numbytes)
+{
+    std::cout << "reading header... ";
+
+    int read_numbytes;
+
+	if ((read_numbytes = recv(sockfd, buf, numbytes, 0)) == -1)
+    {
+	    perror("recv");
+
+	    exit(1);
+	}
+
+    std::cout << "read " << read_numbytes << " bytes." << std::endl;
+
+	buf[read_numbytes] = '\0';
 }
 
 int main(int argc, char** argv)
@@ -89,20 +118,112 @@ int main(int argc, char** argv)
 
 	freeaddrinfo(servinfo); // all done with this structure
 
-    std::cout << "reading... ";
+    read_dsi_packet(sockfd, buf, PACKET_START_SIZE);
 
-	if ((numbytes = recv(sockfd, buf, HEADER_SIZE, 0)) == -1)
+    if (strcmp(buf, PACKET_START) != 0)
     {
-	    perror("recv");
+        std::cout << "Packet header does not match!(" << buf << ")" << std::endl;
 
-	    exit(1);
-	}
+        exit(-1);
+    }
 
-    std::cout << "read." << std::endl;
+    read_dsi_packet(sockfd, buf, PACKET_TYPE_SIZE);
 
-	buf[numbytes] = '\0';
+    unsigned int packet_type = (unsigned int) buf[0];
 
-	printf("client: received '%d' bytes: '%s'\n", numbytes, buf);
+    std::cout << "Packet type: " << packet_type << std::endl;
+
+    read_dsi_packet(sockfd, buf, PACKET_LENGTH_SIZE);
+
+    unsigned int packet_size = (unsigned int) buf[1] + ((unsigned int) buf[0] << 8);
+
+    if (packet_size > BUFFER_SIZE)
+    {
+        std::cout << "Packet is too big!" << std::endl;
+
+        exit(-1);
+    }
+
+    std::cout << "Packet[0]: " << (unsigned int) buf[0] << std::endl;
+    std::cout << "Packet[1]: " << (unsigned int) buf[1] << std::endl;
+    std::cout << "Packet size: " << packet_size << std::endl;
+
+    read_dsi_packet(sockfd, buf, PACKET_NUMBER_SIZE);
+
+    unsigned int packet_number = (unsigned int) buf[3] +
+                                 ((unsigned int) buf[2] << 8) +
+                                 ((unsigned int) buf[1] << 16) +
+                                 ((unsigned int) buf[0] << 24);
+
+    std::cout << "Packet[0]: " << (unsigned int) buf[0] << std::endl;
+    std::cout << "Packet[1]: " << (unsigned int) buf[1] << std::endl;
+    std::cout << "Packet[2]: " << (unsigned int) buf[2] << std::endl;
+    std::cout << "Packet[3]: " << (unsigned int) buf[3] << std::endl;
+
+    std::cout << "Packet number: " << packet_number << std::endl;
+
+    read_dsi_packet(sockfd, buf, packet_size);
+
+
+    unsigned int offset = 0;
+
+    unsigned int event_code = (unsigned int) buf[3] +
+                              ((unsigned int) buf[2] << 8) +
+                              ((unsigned int) buf[1] << 16) +
+                              ((unsigned int) buf[0] << 24);
+
+    std::cout << "Event code: " << event_code << std::endl;
+
+    offset += PACKET_EVENT_CODE_SIZE;
+
+    unsigned int sending_node = (unsigned int) buf[3 + offset] +
+                                ((unsigned int) buf[2 + offset] << 8) +
+                                ((unsigned int) buf[1 + offset] << 16) +
+                                ((unsigned int) buf[0 + offset] << 24);
+
+    std::cout << "Sending node: " << sending_node << std::endl;
+
+    offset += PACKET_EVENT_SENDING_NODE_SIZE;
+
+    unsigned int message_length = (unsigned int) buf[3 + offset] +
+                                  ((unsigned int) buf[2 + offset] << 8) +
+                                  ((unsigned int) buf[1 + offset] << 16) +
+                                  ((unsigned int) buf[0 + offset] << 24);
+
+    std::cout << "Message length: " << message_length << std::endl;
+
+    offset += PACKET_EVENT_LENGTH_SIZE;
+    buf[offset + message_length] = '\0';
+
+    std::cout << "Message: " << &buf[offset] << std::endl;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 	close(sockfd);
 }
